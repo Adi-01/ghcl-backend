@@ -38,8 +38,8 @@ class KajliTruckEntry(models.Model):
     )
 
     # Core Data
-    godownnumber = models.IntegerField()
-    cargo_type = models.CharField(max_length=3, choices=CARGO_CHOICES)
+    godownnumber = models.IntegerField(db_index=True)
+    cargo_type = models.CharField(max_length=3, choices=CARGO_CHOICES, db_index=True)
     bags = models.IntegerField()
     truck_number = models.CharField(max_length=50)
     

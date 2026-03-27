@@ -3,7 +3,7 @@ from .models import KajliTruckEntry, KajliAdjustment
 from .serializers import KajliTruckEntrySerializer, KajliAdjustmentSerializer
 from rest_framework.decorators import action
 from django.db.models.functions import Coalesce
-from django.db.models import Sum
+from django.db.models import Sum,IntegerField,F,Case,When
 from rest_framework.response import Response
 from .permissions import IsAdminUser,IsModerator
 
@@ -26,23 +26,52 @@ class KajliTruckEntryViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def godown_summary(self, request):
         allowed_godowns = [1, 2, 3, 4, 5, 6, 8, 9, 10, 11]
-        summary_data = []
+        cargo_types = ['LSA', 'DSA', 'RBC']
+        
+        # 1. Get ALL truck sums in ONE query using conditional aggregation
+        truck_data = KajliTruckEntry.objects.filter(
+            godownnumber__in=allowed_godowns,
+            cargo_type__in=cargo_types
+        ).values('godownnumber', 'cargo_type').annotate(
+            net_bags=Sum(
+                Case(
+                    When(loading_status='IN', then=F('bags')),
+                    When(loading_status='OUT', then=-F('bags')),
+                    default=0,
+                    output_field=IntegerField()
+                )
+            )
+        )
 
-        for godown in allowed_godowns:
-            def get_net_bags(cargo):
-                in_bags = KajliTruckEntry.objects.filter(godownnumber=godown, cargo_type=cargo, loading_status='IN').aggregate(t=Coalesce(Sum('bags'), 0))['t']
-                out_bags = KajliTruckEntry.objects.filter(godownnumber=godown, cargo_type=cargo, loading_status='OUT').aggregate(t=Coalesce(Sum('bags'), 0))['t']
-                # Add manual adjustments
-                adjust = KajliAdjustment.objects.filter(godownnumber=godown, cargo_type=cargo).aggregate(t=Coalesce(Sum('adjustment_value'), 0))['t']
-                
-                return (in_bags - out_bags) + adjust
+        # 2. Get ALL adjustments in ONE query 
+        adj_data = KajliAdjustment.objects.filter(
+            godownnumber__in=allowed_godowns,
+            cargo_type__in=cargo_types
+        ).values('godownnumber', 'cargo_type').annotate(
+            total_adj=Sum('adjustment_value')
+        )
 
-            summary_data.append({
-                'godown': godown,
-                'LSA': get_net_bags('LSA'),
-                'DSA': get_net_bags('DSA'),
-                'RBC': get_net_bags('RBC'),
-            })
+        # Initialize the result map
+        results = {g: {c: 0 for c in cargo_types} for g in allowed_godowns}
+
+        # Merge Truck Data
+        for item in truck_data:
+            results[item['godownnumber']][item['cargo_type']] += item['net_bags'] or 0
+
+        # Merge Adjustment Data
+        for item in adj_data:
+            results[item['godownnumber']][item['cargo_type']] += item['total_adj'] or 0
+
+        # Format for frontend
+        summary_data = [
+            {
+                'godown': g,
+                'LSA': results[g]['LSA'],
+                'DSA': results[g]['DSA'],
+                'RBC': results[g]['RBC'],
+            } for g in allowed_godowns
+        ]
+
         return Response(summary_data)
     
     @action(detail=False, methods=['get'])
@@ -133,4 +162,4 @@ class KajliTruckEntryViewSet(viewsets.ModelViewSet):
 class KajliAdjustmentViewSet(viewsets.ModelViewSet):
     queryset = KajliAdjustment.objects.all()
     serializer_class = KajliAdjustmentSerializer
-    permission_classes = [[IsAdminUser | IsModerator]]
+    permission_classes = [IsAdminUser | IsModerator]
