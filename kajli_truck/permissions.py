@@ -15,6 +15,6 @@ class IsModerator(permissions.BasePermission):
         if isinstance(labels, list):
             # Safely lowercase all items in the list
             lower_labels = [str(label).lower().strip() for label in labels]
-            return "moderator" in lower_labels
+            return "kajli" in lower_labels
             
         return False
