@@ -73,7 +73,8 @@ class KajliTruckEntryViewSet(viewsets.ModelViewSet):
         ]
 
         return Response(summary_data)
-    
+
+
     @action(detail=False, methods=['get'])
     def daily_godown_summary(self, request):
         date_param = self.request.query_params.get('date', None)
@@ -84,35 +85,30 @@ class KajliTruckEntryViewSet(viewsets.ModelViewSet):
             trucks_queryset = trucks_queryset.filter(entry_date__date=date_param)
 
         # 2. Identify ACTIVE Godowns (Only those with entries today)
-        # values_list returns just the godown numbers, flat=True makes it a simple list
-        # distinct() ensures we don't have duplicates
         active_godowns = trucks_queryset.values_list('godownnumber', flat=True).distinct().order_by('godownnumber')
 
-        # 3. Calculate Truck Stats (Only for active trucks on this date)
+        # 3. Calculate Truck Stats
         stats = {
             "in_count": trucks_queryset.filter(truckstatus='IN - complete').count(),
             "out_count": trucks_queryset.filter(truckstatus='OUT - complete').count(),
         }
 
-        # 4. Calculate Grid Data ONLY for active godowns
+        # 4. Calculate Grid Data for IN and OUT separately
         summary_data = []
         for godown in active_godowns:
-            def get_net_bags(cargo):
-                # We already filtered trucks_queryset by date above
+            def get_bags(cargo):
                 qs = trucks_queryset.filter(godownnumber=godown, cargo_type=cargo)
-                
                 in_bags = qs.filter(loading_status='IN').aggregate(t=Coalesce(Sum('bags'), 0))['t']
                 out_bags = qs.filter(loading_status='OUT').aggregate(t=Coalesce(Sum('bags'), 0))['t']
-                
-                return in_bags - out_bags
+                return {"in": in_bags, "out": out_bags}
 
-            # Calculate for this specific active godown
-            lsa = get_net_bags('LSA')
-            dsa = get_net_bags('DSA')
-            rbc = get_net_bags('RBC')
+            # Calculate for this specific godown
+            lsa = get_bags('LSA')
+            dsa = get_bags('DSA')
+            rbc = get_bags('RBC')
 
-            # Only add to list if at least one cargo type has movement (double safety)
-            if lsa != 0 or dsa != 0 or rbc != 0:
+            # Only add to list if at least one cargo type has movement IN or OUT
+            if any(val > 0 for cargo in [lsa, dsa, rbc] for val in cargo.values()):
                 summary_data.append({
                     'godown': godown,
                     'LSA': lsa,
