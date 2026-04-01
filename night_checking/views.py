@@ -124,3 +124,24 @@ class TruckEntryViewSet(viewsets.ModelViewSet):
         return Response({
             "message": f"Successfully deleted {deleted_count} records for {month_str}."
         }, status=status.HTTP_200_OK)
+    
+    @action(detail=False, methods=['get'], pagination_class=None, permission_classes=[IsAdminUser])
+    def export_data(self, request):
+        """
+        Unpaginated endpoint for exporting full daily or monthly reports.
+        """
+        export_type = request.query_params.get('export_type')
+        date_param = request.query_params.get('date')
+        month_param = request.query_params.get('month_str') # e.g. mar-2026
+
+        queryset = TruckEntry.objects.all().order_by('-entry_date')
+
+        if export_type == 'daily' and date_param:
+            queryset = queryset.filter(entry_date__date=date_param)
+        elif export_type == 'monthly' and month_param:
+            queryset = queryset.filter(entry_month=month_param.lower())
+        else:
+            return Response({"error": "Invalid export parameters"}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
