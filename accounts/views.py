@@ -73,25 +73,43 @@ class AuthViewSet(viewsets.ModelViewSet):
             "refresh_token": str(refresh)
         }, status=status.HTTP_200_OK)
 
-    # I HAVE REMOVED force_login ENTIRELY
 
     @action(detail=False, methods=["post"], permission_classes=[AllowAny], url_path="refresh")
     def refresh_token(self, request):
-        refresh_token = request.data.get("refresh_token")
+        refresh_token_str = request.data.get("refresh_token")
         
-        if not refresh_token:
+        if not refresh_token_str:
+            print("🚨 REFRESH_DEBUG: No token provided in request body.")
             return Response({"detail": "No refresh token provided"}, status=status.HTTP_401_UNAUTHORIZED)
 
-        try:
-            session = UserSession.objects.filter(refresh_token=refresh_token, expires_at__gt=timezone.now()).first()
-            if not session:
-                return Response({"detail": "Session has been revoked or expired."}, status=status.HTTP_401_UNAUTHORIZED)
+        # 1. Look for the session record without the time filter first
+        session = UserSession.objects.filter(refresh_token=refresh_token_str).first()
+        
+        if not session:
+            print(f"🚨 REFRESH_DEBUG: Token string not found in UserSession table. Length of string sent: {len(refresh_token_str)}")
+            return Response({"detail": "Session not found."}, status=status.HTTP_401_UNAUTHORIZED)
 
-            refresh = CustomRefreshToken(refresh_token)
+        # 2. Check the expiration logic
+        now = timezone.now()
+        if session.expires_at <= now:
+            print(f"🚨 REFRESH_DEBUG: DB Expiry Check Failed.")
+            print(f"   - Current Server Time (UTC): {now}")
+            print(f"   - DB Session Expiry (UTC):   {session.expires_at}")
+            print(f"   - Time Difference:           {session.expires_at - now}")
+            
+            # Since this session is dead in the DB, clean it up so the user isn't locked out!
+            session.delete()
+            return Response({"detail": "Session has expired in database."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            # 3. Attempt JWT Decoding
+            refresh = CustomRefreshToken(refresh_token_str)
             token_user_id = refresh.payload.get('user_id')
+            
             user = User.objects.filter(user_id=token_user_id).first()
             
             if not user or not user.is_active:
+                print(f"🚨 REFRESH_DEBUG: User {token_user_id} is inactive or does not exist. Deleting session.")
                 session.delete()
                 return Response(
                     {"detail": "Session terminated. Account has been blocked.", "code": "account_blocked"},
@@ -99,8 +117,18 @@ class AuthViewSet(viewsets.ModelViewSet):
                 )
 
             access_token = str(refresh.access_token)
-        except Exception:
-            return Response({"detail": "Invalid refresh token"}, status=status.HTTP_401_UNAUTHORIZED)
+            print(f"✅ REFRESH_DEBUG: Success for user {user.email}")
+
+        except Exception as e:
+            # 4. JWT Math Error (Expired signature, wrong secret key, etc.)
+            print(f"🚨 REFRESH_DEBUG: SimpleJWT Exception caught!")
+            print(f"   - Error Type: {type(e).__name__}")
+            print(f"   - Error Message: {str(e)}")
+            
+            # IMPORTANT: If the JWT is dead, the session is dead. 
+            # Delete it so the user can log back in on the login screen.
+            # session.delete()
+            return Response({"detail": f"Invalid refresh token: {str(e)}"}, status=status.HTTP_401_UNAUTHORIZED)
 
         return Response({
             "detail": "Access token refreshed",
