@@ -127,7 +127,7 @@ class AuthViewSet(viewsets.ModelViewSet):
             
             # IMPORTANT: If the JWT is dead, the session is dead. 
             # Delete it so the user can log back in on the login screen.
-            # session.delete()
+            session.delete()
             return Response({"detail": f"Invalid refresh token: {str(e)}"}, status=status.HTTP_401_UNAUTHORIZED)
 
         return Response({
