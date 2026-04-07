@@ -10,6 +10,7 @@ from .tokens import CustomRefreshToken
 from .models import User, UserSession
 from .serializers import LoginSerializer, AdminUserSerializer
 from .permissions import IsAdminUser
+import traceback
 
 User = get_user_model()
 
@@ -76,64 +77,73 @@ class AuthViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], permission_classes=[AllowAny], url_path="refresh")
     def refresh_token(self, request):
-        refresh_token_str = request.data.get("refresh_token")
-        
-        if not refresh_token_str:
-            print("🚨 REFRESH_DEBUG: No token provided in request body.")
-            return Response({"detail": "No refresh token provided"}, status=status.HTTP_401_UNAUTHORIZED)
-
-        # 1. Look for the session record without the time filter first
-        session = UserSession.objects.filter(refresh_token=refresh_token_str).first()
-        
-        if not session:
-            print(f"🚨 REFRESH_DEBUG: Token string not found in UserSession table. Length of string sent: {len(refresh_token_str)}")
-            return Response({"detail": "Session not found."}, status=status.HTTP_401_UNAUTHORIZED)
-
-        # 2. Check the expiration logic
-        now = timezone.now()
-        if session.expires_at <= now:
-            print(f"🚨 REFRESH_DEBUG: DB Expiry Check Failed.")
-            print(f"   - Current Server Time (UTC): {now}")
-            print(f"   - DB Session Expiry (UTC):   {session.expires_at}")
-            print(f"   - Time Difference:           {session.expires_at - now}")
-            
-            # Since this session is dead in the DB, clean it up so the user isn't locked out!
-            session.delete()
-            return Response({"detail": "Session has expired in database."}, status=status.HTTP_401_UNAUTHORIZED)
-
         try:
-            # 3. Attempt JWT Decoding
-            refresh = CustomRefreshToken(refresh_token_str)
-            token_user_id = refresh.payload.get('user_id')
+            refresh_token_str = request.data.get("refresh_token")
             
-            user = User.objects.filter(user_id=token_user_id).first()
+            if not refresh_token_str:
+                print("🚨 REFRESH_ERROR: No refresh token provided in request body.")
+                return Response({"detail": "No refresh token provided"}, status=status.HTTP_400_BAD_REQUEST)
+
+            session = UserSession.objects.filter(refresh_token=refresh_token_str).first()
             
-            if not user or not user.is_active:
-                print(f"🚨 REFRESH_DEBUG: User {token_user_id} is inactive or does not exist. Deleting session.")
+            if not session:
+                print("🚨 REFRESH_ERROR: Token not found in database.")
+                return Response({"detail": "Session not found."}, status=status.HTTP_401_UNAUTHORIZED)
+
+            # Helper to try and grab the email early for error logging if the session has a user_id
+            session_user_id = getattr(session, 'user_id', None)
+            user_email = "Unknown"
+            if session_user_id:
+                user = User.objects.filter(user_id=session_user_id).first()
+                if user:
+                    user_email = user.email
+
+            now = timezone.now()
+            if session.expires_at <= now:
+                print(f"🚨 REFRESH_ERROR: Session expired in database for user: {user_email}")
                 session.delete()
-                return Response(
-                    {"detail": "Session terminated. Account has been blocked.", "code": "account_blocked"},
-                    status=status.HTTP_403_FORBIDDEN
-                )
+                return Response({"detail": "Session has expired in database."}, status=status.HTTP_401_UNAUTHORIZED)
 
-            access_token = str(refresh.access_token)
-            print(f"✅ REFRESH_DEBUG: Success for user {user.email}")
+            try:
+                refresh = CustomRefreshToken(refresh_token_str)
+                token_user_id = refresh.payload.get('user_id')
+                
+                # Fetch user again via JWT payload just to be perfectly secure
+                user = User.objects.filter(user_id=token_user_id).first()
+                
+                if not user or not user.is_active:
+                    email = user.email if user else "Unknown"
+                    print(f"🚨 REFRESH_ERROR: Account blocked or missing for user: {email}")
+                    session.delete()
+                    return Response(
+                        {"detail": "Session terminated. Account has been blocked.", "code": "account_blocked"},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
 
-        except Exception as e:
-            # 4. JWT Math Error (Expired signature, wrong secret key, etc.)
-            print(f"🚨 REFRESH_DEBUG: SimpleJWT Exception caught!")
-            print(f"   - Error Type: {type(e).__name__}")
-            print(f"   - Error Message: {str(e)}")
+                access_token = str(refresh.access_token)
+                
+                # The only non-error print you care about
+                print(f"✅ REFRESH_SUCCESS: Token refreshed for {user.email}")
+
+                return Response({
+                    "detail": "Access token refreshed",
+                    "access_token": access_token
+                }, status=status.HTTP_200_OK)
+
+            except Exception as jwt_e:
+                print(f"🚨 REFRESH_ERROR: JWT decoding failed for user: {user_email} | Error: {str(jwt_e)}")
+                session.delete()
+                return Response({"detail": f"Invalid refresh token: {str(jwt_e)}"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        except Exception as critical_e:
+            # The true 500 error catcher. We keep the traceback so you actually know what broke.
+            print(f"💥 FATAL 500 CRASH IN REFRESH_TOKEN | Error: {str(critical_e)}")
+            traceback.print_exc()  
             
-            # IMPORTANT: If the JWT is dead, the session is dead. 
-            # Delete it so the user can log back in on the login screen.
-            session.delete()
-            return Response({"detail": f"Invalid refresh token: {str(e)}"}, status=status.HTTP_401_UNAUTHORIZED)
-
-        return Response({
-            "detail": "Access token refreshed",
-            "access_token": access_token
-        }, status=status.HTTP_200_OK)
+            return Response(
+                {"detail": "An unexpected server error occurred during token refresh."}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=False, methods=["post"], permission_classes=[AllowAny], url_path="logout")
     def logout(self, request):
