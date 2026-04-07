@@ -11,6 +11,7 @@ from .models import User, UserSession
 from .serializers import LoginSerializer, AdminUserSerializer
 from .permissions import IsAdminUser
 import traceback
+from rest_framework.decorators import permission_classes,api_view
 
 User = get_user_model()
 
@@ -22,6 +23,12 @@ def get_client_ip(request):
     if x_forwarded_for:
         return x_forwarded_for.split(',')[0]
     return request.META.get('REMOTE_ADDR')
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def server_health_check(request):
+    # If this responds, the server and DB are officially awake!
+    return Response({"status": "awake", "message": "Server is ready"})
 
 class AuthViewSet(viewsets.ModelViewSet):
     """

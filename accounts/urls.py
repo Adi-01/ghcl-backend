@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from .views import AuthViewSet, AdminUserViewSet
+from .views import AuthViewSet, AdminUserViewSet, server_health_check
 
 # Create DRF router
 router = DefaultRouter()
@@ -14,4 +14,5 @@ router.register(r'admin-users', AdminUserViewSet, basename='admin-users')
 
 urlpatterns = [
     path("", include(router.urls)),
+    path('health/', server_health_check)
 ]
