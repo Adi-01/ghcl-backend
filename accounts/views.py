@@ -12,6 +12,8 @@ from .serializers import LoginSerializer, AdminUserSerializer
 from .permissions import IsAdminUser
 import traceback
 from rest_framework.decorators import permission_classes,api_view
+import time
+from django.db import connection,OperationalError
 
 User = get_user_model()
 
@@ -91,7 +93,22 @@ class AuthViewSet(viewsets.ModelViewSet):
                 print("🚨 REFRESH_ERROR: No refresh token provided in request body.")
                 return Response({"detail": "No refresh token provided"}, status=status.HTTP_400_BAD_REQUEST)
 
-            session = UserSession.objects.filter(refresh_token=refresh_token_str).first()
+            # 🔥 THE NEW IN-FLIGHT RETRY LOOP 🔥
+            session = None
+            for attempt in range(3):
+                try:
+                    # Attempt to hit the database
+                    session = UserSession.objects.filter(refresh_token=refresh_token_str).first()
+                    break  # If it succeeds, break out of the loop immediately!
+                except OperationalError as e:
+                    # If this was the last attempt, give up and let the 500 catcher handle it
+                    if attempt == 2:
+                        raise e
+                    
+                    print(f"⏳ Database asleep. Retrying in 2 seconds... (Attempt {attempt + 1}/3)")
+                    connection.close()  # 🚨 CRITICAL: Destroy the broken connection
+                    time.sleep(2)       # Wait 2 seconds for Postgres to finish booting
+
             
             if not session:
                 print("🚨 REFRESH_ERROR: Token not found in database.")
@@ -101,6 +118,7 @@ class AuthViewSet(viewsets.ModelViewSet):
             session_user_id = getattr(session, 'user_id', None)
             user_email = "Unknown"
             if session_user_id:
+                # (Since the retry loop above succeeded, we know the DB is fully awake for this query)
                 user = User.objects.filter(user_id=session_user_id).first()
                 if user:
                     user_email = user.email
