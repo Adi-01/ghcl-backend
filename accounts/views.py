@@ -173,15 +173,31 @@ class AuthViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], permission_classes=[AllowAny], url_path="logout")
     def logout(self, request):
         refresh_token = request.data.get("refresh_token")
-
+        
+        print("\n" + "="*50)
+        print("🚨 LOGOUT ENDPOINT CALLED 🚨")
+        print(f"Token provided in request body: {'YES' if refresh_token else 'NO'}")
+        
         if refresh_token:
+            print(f"Token snippet: {refresh_token[:20]}...")
             try:
-                UserSession.objects.filter(refresh_token=refresh_token).delete()
+                # Let's check if the session actually exists before deleting it, purely for our logs
+                session = UserSession.objects.filter(refresh_token=refresh_token).first()
+                if session:
+                    print(f"✅ Session found in DB for user_id {session.user_id}. Deleting now...")
+                    session.delete()
+                else:
+                    print("⚠️ Session was NOT found in DB. It was already deleted somehow!")
 
                 token = CustomRefreshToken(refresh_token)
                 token.blacklist()
-            except Exception:
+                print("✅ Token successfully added to Django blacklist.")
+                
+            except Exception as e:
+                print(f"⚠️ Error during blacklist/delete process: {str(e)}")
                 pass
+                
+        print("="*50 + "\n")
 
         return Response({"detail": "Logged out successfully"}, status=status.HTTP_200_OK)
 
