@@ -1,24 +1,27 @@
-from rest_framework_simplejwt.authentication import JWTAuthentication
+# authentication.py
+from rest_framework.authentication import BaseAuthentication
+from rest_framework.exceptions import AuthenticationFailed
+from django.utils import timezone
+from .models import UserSession
 
-class CookieJWTAuthentication(JWTAuthentication):
+class OpaqueTokenAuthentication(BaseAuthentication):
     def authenticate(self, request):
-        # 1. BEST PRACTICE: Check for standard Authorization Bearer header first
-        # This is how Next.js Server Actions will communicate securely with Django
-        header = self.get_header(request)
-        if header is not None:
-            raw_token = self.get_raw_token(header)
-            if raw_token is not None:
-                validated_token = self.get_validated_token(raw_token)
-                return (self.get_user(validated_token), validated_token)
+        auth_header = request.headers.get('Authorization')
+        
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return None # Move on to next auth class or fail
 
-        # 2. FALLBACK: Check the cookies 
-        # (Useful if you ever hit the API directly from the browser)
-        raw_token = request.COOKIES.get("access_token")
-        if raw_token is not None:
-            try:
-                validated_token = self.get_validated_token(raw_token)
-                return (self.get_user(validated_token), validated_token)
-            except Exception:
-                return None # Token is invalid or expired
+        token = auth_header.split(' ')[1]
 
-        return None # No token found
+        # 🚨 THE INSTANT KILL CHECK: Does this token exist in the DB right now?
+        session = UserSession.objects.filter(session_token=token).select_related('user').first()
+
+        if not session:
+            raise AuthenticationFailed("Invalid or expired session.")
+
+        if session.expires_at < timezone.now():
+            session.delete()
+            raise AuthenticationFailed("Session has expired.")
+
+        # Return the user and the token (makes request.user work perfectly in views)
+        return (session.user, token)

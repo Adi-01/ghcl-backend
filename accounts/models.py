@@ -28,54 +28,16 @@ class CustomUserManager(BaseUserManager):
 
 
 class User(AbstractUser):
-    # =================================================================
-    # CORE IDENTIFIER (API SAFE)
-    # =================================================================
-    user_id = models.UUIDField(
-        default=uuid.uuid4,
-        editable=False,
-        unique=True,
-        db_index=True
-    )
-
-    # =================================================================
-    # AUTH FIELDS
-    # =================================================================
+    user_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, db_index=True)
     email = models.EmailField(unique=True, db_index=True)
-
-    username = models.CharField(
-        max_length=150,
-        blank=True,
-        null=True 
-    )
-
-    phone_number = models.CharField(
-        max_length=20,
-        blank=True,
-        null=True
-    )
-
-    # =================================================================
-    # LABELS
-    # =================================================================
-    labels = models.JSONField(
-        default=list,
-        blank=True
-    )
-    # Example:
-    # ["admin", "moderator", "owner"]
-
-    # =================================================================
-    # TIMESTAMPS
-    # =================================================================
+    username = models.CharField(max_length=150, blank=True, null=True)
+    phone_number = models.CharField(max_length=20, blank=True, null=True)
+    labels = models.JSONField(default=list, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    # =================================================================
-    # DJANGO CONFIG
-    # =================================================================
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
-    objects = CustomUserManager()  # <- use custom manager 
+    objects = CustomUserManager()
 
     def save(self, *args, **kwargs):
         if self.email:
@@ -87,19 +49,12 @@ class User(AbstractUser):
 
 
 class UserSession(models.Model):
-    # =================================================================
-    # CORE IDENTIFIERS
-    # =================================================================
-    # We use a UUID so if we ever pass the session ID to the frontend 
-    # (e.g., to click "Revoke Device"), it is API-safe and unguessable.
     session_id = models.UUIDField(
         default=uuid.uuid4, 
         editable=False, 
         unique=True, 
         primary_key=True
     )
-    
-    # Link to the user. If the user is deleted, their sessions are deleted (CASCADE).
     user = models.ForeignKey(
         User, 
         on_delete=models.CASCADE, 
@@ -107,30 +62,16 @@ class UserSession(models.Model):
         db_index=True
     )
     
-    # We store the exact refresh token string. 
-    # db_index=True makes looking up the token lightning fast during the refresh cycle.
-    refresh_token = models.TextField(unique=True, db_index=True)
+    # 🔥 CHANGED: We now store the Opaque Token instead of a JWT
+    session_token = models.CharField(max_length=255, unique=True, db_index=True)
 
-    # =================================================================
-    # DEVICE AUDIT INFO (For the Frontend UI)
-    # =================================================================
-    # Will store parsed User-Agent (e.g., "Chrome on Mac", "Safari on iPhone")
     device_info = models.CharField(max_length=255, blank=True, null=True)
-    
-    # Will store the IP address (e.g., "192.168.1.1")
     ip_address = models.GenericIPAddressField(blank=True, null=True)
 
-    # =================================================================
-    # LIFECYCLE TIMESTAMPS
-    # =================================================================
     created_at = models.DateTimeField(auto_now_add=True)
-    
-    # We will explicitly set this to 7 days in the future when creating the session.
-    # This allows us to easily filter out mathematically dead tokens.
     expires_at = models.DateTimeField(db_index=True)
 
     class Meta:
-        # Most recent logins show up first
         ordering = ['-created_at']
         verbose_name = "User Session"
         verbose_name_plural = "User Sessions"
@@ -140,6 +81,5 @@ class UserSession(models.Model):
     
     @property
     def is_expired(self):
-        """Helper property to quickly check if the session has naturally died."""
         from django.utils import timezone
         return timezone.now() > self.expires_at

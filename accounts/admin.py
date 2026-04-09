@@ -6,7 +6,8 @@ from .models import User, UserSession
 class UserSessionInline(admin.TabularInline):
     model = UserSession
     extra = 0  # Prevents empty rows from showing up
-    readonly_fields = ("session_id", "device_info", "ip_address", "created_at", "expires_at", "refresh_token")
+    # 🔥 CHANGED: refresh_token -> session_token
+    readonly_fields = ("session_id", "device_info", "ip_address", "created_at", "expires_at", "session_token")
     can_delete = True  # Allows you to "Revoke" a session by deleting it here
     fields = ("device_info", "ip_address", "created_at", "expires_at")
 
@@ -65,4 +66,5 @@ class UserSessionAdmin(admin.ModelAdmin):
     list_display = ("user", "device_info", "ip_address", "created_at", "is_expired")
     list_filter = ("created_at", "expires_at")
     search_fields = ("user__email", "ip_address", "device_info")
-    readonly_fields = ("session_id", "created_at", "refresh_token")
+    # 🔥 CHANGED: refresh_token -> session_token
+    readonly_fields = ("session_id", "created_at", "session_token")
