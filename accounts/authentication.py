@@ -1,4 +1,3 @@
-# authentication.py
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from django.utils import timezone
@@ -9,11 +8,10 @@ class OpaqueTokenAuthentication(BaseAuthentication):
         auth_header = request.headers.get('Authorization')
         
         if not auth_header or not auth_header.startswith('Bearer '):
-            return None # Move on to next auth class or fail
+            return None 
 
         token = auth_header.split(' ')[1]
 
-        # 🚨 THE INSTANT KILL CHECK: Does this token exist in the DB right now?
         session = UserSession.objects.filter(session_token=token).select_related('user').first()
 
         if not session:
@@ -23,5 +21,8 @@ class OpaqueTokenAuthentication(BaseAuthentication):
             session.delete()
             raise AuthenticationFailed("Session has expired.")
 
-        # Return the user and the token (makes request.user work perfectly in views)
         return (session.user, token)
+
+    # 🔥 NEW: Add this to fix the 403 vs 401 issue!
+    def authenticate_header(self, request):
+        return 'Bearer'
