@@ -53,6 +53,6 @@ class TruckEntry(models.Model):
         if self.transporter_name:
             Transporter.objects.get_or_create(name=self.transporter_name.strip())
         if self.entry_date:
-            self.entry_month = self.entry_date.strftime('%b-%Y').lower() 
+            self.entry_month = timezone.localtime(self.entry_date).strftime('%b-%Y').lower() 
             
         super().save(*args, **kwargs)

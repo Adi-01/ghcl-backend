@@ -137,7 +137,12 @@ class TruckEntryViewSet(viewsets.ModelViewSet):
         queryset = TruckEntry.objects.all().order_by('-entry_date')
 
         if export_type == 'daily' and date_param:
-            queryset = queryset.filter(entry_date__date=date_param)
+            from zoneinfo import ZoneInfo
+            import datetime
+            ist = ZoneInfo("Asia/Kolkata")
+            day_start = datetime.datetime.strptime(date_param, "%Y-%m-%d").replace(tzinfo=ist)
+            day_end = day_start + datetime.timedelta(days=1)
+            queryset = queryset.filter(entry_date__gte=day_start, entry_date__lt=day_end)
         elif export_type == 'monthly' and month_param:
             queryset = queryset.filter(entry_month=month_param.lower())
         else:
