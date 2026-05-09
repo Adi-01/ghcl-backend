@@ -26,7 +26,7 @@ class TruckEntryAdmin(admin.ModelAdmin):
     search_fields = ('entry_id', 'transporter_name', 'remarks')
     
     # Keeps the ID read-only so admins don't accidentally break relationships
-    readonly_fields = ('entry_id',)
+    readonly_fields = ('entry_id','entry_month')
 
     # Organizes the detail view into clean sections
     fieldsets = (
@@ -34,7 +34,7 @@ class TruckEntryAdmin(admin.ModelAdmin):
             'fields': ('entry_id', 'transporter_name', 'status')
         }),
         ('Timestamps', {
-            'fields': ('entry_date', 'exit_date')
+            'fields': ('entry_date', 'exit_date','entry_month')
         }),
         ('Checklist', {
             'fields': ('paper_status', 'driver_status', 'tarpulin_status')
