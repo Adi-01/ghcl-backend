@@ -2,6 +2,7 @@ import uuid
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.models import BaseUserManager
+from django.core.validators import FileExtensionValidator
 
 class CustomUserManager(BaseUserManager):
     use_in_migrations = True
@@ -31,9 +32,13 @@ class User(AbstractUser):
     user_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, db_index=True)
     email = models.EmailField(unique=True, db_index=True)
     username = models.CharField(max_length=150, blank=True, null=True)
+    profile_image = models.ImageField(upload_to='profile_images/', blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
     labels = models.JSONField(default=list, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    emp_id = models.CharField(max_length=50, unique=True, blank=True, null=True, db_index=True)
+    designation = models.CharField(max_length=100, blank=True, null=True)
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
@@ -62,7 +67,7 @@ class UserSession(models.Model):
         db_index=True
     )
     
-    # 🔥 CHANGED: We now store the Opaque Token instead of a JWT
+    
     session_token = models.CharField(max_length=255, unique=True, db_index=True)
 
     device_info = models.CharField(max_length=255, blank=True, null=True)
@@ -83,3 +88,33 @@ class UserSession(models.Model):
     def is_expired(self):
         from django.utils import timezone
         return timezone.now() > self.expires_at
+    
+
+class UserDocument(models.Model):
+    document_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, primary_key=True)
+    user = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name="documents",
+        db_index=True
+    )
+    
+    document_type = models.CharField(max_length=100, db_index=True)
+    document_number = models.CharField(max_length=255, blank=True, null=True)
+    
+    # Enforce PDF uploads only at the model level
+    document_file = models.FileField(
+        upload_to='user_documents/pdfs/', 
+        validators=[FileExtensionValidator(allowed_extensions=['pdf'])]
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "User Document"
+        verbose_name_plural = "User Documents"
+
+    def __str__(self):
+        return f"{self.user.email} | {self.document_type}"

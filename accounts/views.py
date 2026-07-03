@@ -1,18 +1,16 @@
 import secrets # 🔥 NEW: For generating secure opaque tokens
 from datetime import timedelta
 from django.utils import timezone
-from rest_framework import status, viewsets, filters
+from rest_framework import status, viewsets, filters, generics
 from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from django.contrib.auth import get_user_model
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import User, UserSession
-from .serializers import LoginSerializer, AdminUserSerializer
+from .serializers import LoginSerializer, AdminUserSerializer, UserSerializer, UserUpdateSerializer
 from .permissions import IsAdminUser
 from rest_framework.decorators import permission_classes, api_view
 
-User = get_user_model()
 
 def get_client_ip(request):
     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
@@ -145,3 +143,24 @@ class AdminUserViewSet(viewsets.ModelViewSet):
 
         session.delete()
         return Response({"detail": "Device session successfully revoked."}, status=status.HTTP_200_OK)
+    
+
+class UserProfileView(generics.RetrieveUpdateAPIView):
+    """
+    GET: Fetches the current user's profile and read-only documents.
+    PATCH/PUT: Updates ONLY the username and phone_number.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        # Automatically fetch the logged-in user. 
+        # This prevents users from trying to pass another user's ID in the URL.
+        return self.request.user
+
+    def get_serializer_class(self):
+        # Use the strict serializer for update requests
+        if self.request.method in ['PUT', 'PATCH']:
+            return UserUpdateSerializer
+        
+        # Use the full serializer for read (GET) requests
+        return UserSerializer

@@ -1,12 +1,30 @@
 from rest_framework.exceptions import PermissionDenied
 from rest_framework import serializers
-from .models import User
-from django.contrib.auth import get_user_model
+from .models import User, UserDocument
 
-User = get_user_model()
 
+class UserUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        # Strictly limit the fields that can be updated
+        fields = ["username", "phone_number"]
+        
+class UserDocumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserDocument
+        fields = [
+            "id",
+            "document_type",
+            "document_number",
+            "document_file",
+            "created_at"
+        ]
+        # Prevents users from POSTing, PUTting, or PATCHing this data via the standard user endpoints
+        read_only_fields = [fields]
 
 class UserSerializer(serializers.ModelSerializer):
+    documents = UserDocumentSerializer(many=True, read_only=True)
+
     class Meta:
         model = User
         fields = [
@@ -14,12 +32,14 @@ class UserSerializer(serializers.ModelSerializer):
             "email",
             "username",
             "phone_number",
+            "profile_image",
+            "documents", 
             "labels",
             "is_active",
             "updated_at",
             "date_joined"
         ]
-        read_only_fields = ["user_id", "updated_at", "date_joined"]
+        read_only_fields = ["user_id", "updated_at", "date_joined", "documents"]
 
 
 class SignupSerializer(serializers.ModelSerializer):

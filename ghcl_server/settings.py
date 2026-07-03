@@ -162,3 +162,6 @@ CSRF_TRUSTED_ORIGINS = config(
     default='http://localhost:3000', 
     cast=Csv()
 )
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
