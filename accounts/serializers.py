@@ -104,13 +104,13 @@ class AdminUserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)
 
     class Meta:
-        model = User
-        fields = [
-            'user_id', 'email', 'username', 'phone_number', 
-            'labels', 'is_active', 'is_staff', 'date_joined', 'updated_at', 'password',
-        ]
-        # Remove 'email' from read_only_fields so we can set it during creation
-        read_only_fields = ['user_id', 'date_joined', 'updated_at']
+            model = User
+            fields = [
+                'user_id', 'email', 'username', 'phone_number', 
+                'labels', 'is_active', 'is_staff', 'date_joined', 'updated_at', 'password',
+                'emp_id', 'designation',  # Added here
+            ]
+            read_only_fields = ['user_id', 'date_joined', 'updated_at']
 
     def validate_labels(self, value):
         if not isinstance(value, list):
