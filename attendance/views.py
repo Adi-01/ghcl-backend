@@ -148,90 +148,100 @@ class AdminAttendanceLogViewSet(viewsets.ModelViewSet):
             instance.attendance_month = local_time.strftime('%b-%Y').lower()
             instance.save(update_fields=['attendance_date', 'attendance_month'])
 
-
     @action(detail=False, methods=['get'])
     def register(self, request):
         month_param = request.query_params.get('month')
         location_param = request.query_params.get('worklocation')
-        
+
         if not month_param:
             month_param = timezone.localtime().strftime('%b-%Y').lower()
         else:
             month_param = month_param.lower()
-            
+
         try:
             month_obj = datetime.strptime(month_param, '%b-%Y')
             days_in_month = calendar.monthrange(month_obj.year, month_obj.month)[1]
         except ValueError:
             return Response({"error": "Invalid format"}, status=400)
 
-        month_dates = [f"{str(day).zfill(2)}-{month_param}" for day in range(1, days_in_month + 1)]
+        month_dates = [
+            f"{str(day).zfill(2)}-{month_param}"
+            for day in range(1, days_in_month + 1)
+        ]
 
-        # --- 1. APPLY LOCATION FILTER TO ATTENDANCE RECORDS ---
-        attendance_qs = Attendance.objects.filter(attendance_month=month_param)
-        
+        attendance_qs = Attendance.objects.filter(
+            attendance_month=month_param
+        )
+
         if location_param and location_param != "all":
-            attendance_qs = attendance_qs.filter(worklocation__iexact=location_param)
-
-        # --- UPDATE IS HERE ---
-        # We annotate both the total count AND the active count
-        attendance_data = attendance_qs \
-            .values('user__user_id', 'attendance_date') \
-            .annotate(
-                present_count=Count('attendance_id'),
-                active_count=Count('attendance_id', filter=Q(check_out_time__isnull=True))
+            attendance_qs = attendance_qs.filter(
+                worklocation__iexact=location_param
             )
 
+        attendance_data = (
+            attendance_qs
+            .values('user__user_id', 'attendance_date')
+            .annotate(
+                present_count=Count('attendance_id'),
+                active_count=Count(
+                    'attendance_id',
+                    filter=Q(check_out_time__isnull=True)
+                )
+            )
+        )
+
         matrix = {}
+
         for entry in attendance_data:
-            u_id = str(entry['user__user_id']) 
-            date_str = entry['attendance_date']
-            count = entry['present_count']
-            is_working = entry['active_count'] > 0 # True if they have ANY uncompleted shift today
-            
+            u_id = str(entry['user__user_id'])
+
             if u_id not in matrix:
                 matrix[u_id] = {}
-            
-            # Store an object with both the count and the working status
-            matrix[u_id][date_str] = {
-                "count": count,
-                "is_working": is_working
+
+            matrix[u_id][entry['attendance_date']] = {
+                "count": entry['present_count'],
+                "is_working": entry['active_count'] > 0,
             }
 
         users = User.objects.filter(
-            is_active=True, 
-            labels__icontains="attend"
+            is_active=True,
+            labels__icontains="attend",
         ).order_by('username', 'email')
 
         register_list = []
+
         for user in users:
             user_id_str = str(user.user_id)
-            user_name = user.username if user.username else user.email
             user_attendance = matrix.get(user_id_str, {})
-            
-            total_days_present = len(user_attendance.keys())
-            # Safely sum the counts from our new dictionary structure
-            total_shifts_worked = sum(day_data['count'] for day_data in user_attendance.values())
 
-            # --- 2. CLEAN UP EMPTY ROWS ON FILTER ---
-            if location_param and location_param != "all" and total_shifts_worked == 0:
+            total_shifts_worked = sum(
+                day_data['count']
+                for day_data in user_attendance.values()
+            )
+
+            if (
+                location_param
+                and location_param != "all"
+                and total_shifts_worked == 0
+            ):
                 continue
 
             register_list.append({
                 "user_id": user_id_str,
-                "user_name": user_name,
-                "attendance": user_attendance,       
-                "total_days_present": total_days_present,
-                "total_shifts_worked": total_shifts_worked
+                "user_name": user.username or user.email,
+                "emp_id": user.emp_id,
+                "designation": user.designation,
+                "attendance": user_attendance,
+                "total_shifts_worked": total_shifts_worked,
             })
 
         return Response({
             "month": month_param,
             "days_in_month": days_in_month,
-            "dates": month_dates, 
-            "register": register_list
+            "dates": month_dates,
+            "register": register_list,
         })
-    
+
     @action(detail=False, methods=['post'])
     def bulk_delete(self, request):
         """

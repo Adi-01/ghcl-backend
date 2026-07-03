@@ -18,6 +18,8 @@ class CustomUserAdmin(UserAdmin):
     
     list_display = (
         "email",
+        "emp_id",
+        "designation",
         "username",
         "phone_number",
         "is_active",
@@ -30,9 +32,28 @@ class CustomUserAdmin(UserAdmin):
     ordering = ("email",)
     
     fieldsets = (
-        (None, {"fields": ("email", "password")}),
-        ("Personal Info", {"fields": ("username", "phone_number")}),
-        ("Labels", {"fields": ("labels",)}),
+        (None, {
+            "fields": (
+                "email",
+                "password",
+            )
+        }),
+        ("Employee Information", {
+            "fields": (
+                "emp_id",
+                "designation",
+            )
+        }),
+        ("Personal Info", {
+            "fields": (
+                "username",
+                "phone_number",
+                "profile_image",
+            )
+        }),
+        ("Labels", {
+            "fields": ("labels",)
+        }),
         (
             "Permissions",
             {
@@ -45,7 +66,12 @@ class CustomUserAdmin(UserAdmin):
                 )
             },
         ),
-        ("Timestamps", {"fields": ("last_login", "updated_at")}),
+        ("Timestamps", {
+            "fields": (
+                "last_login",
+                "updated_at",
+            )
+        }),
     )
 
     add_fieldsets = (
